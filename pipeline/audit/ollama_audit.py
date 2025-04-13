@@ -80,6 +80,13 @@ async def main(args):
     out_file = f"{language.lower()}_{args.model.replace(':', '_')}_results.jsonl"
     in_file = f"{language.lower()}_train_dataset.jsonl"
 
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Restoring the file from the output dir, so we continue processing from last stopped.
+    if args.restore and Path(output_dir / out_file).exists():
+        shutil.copyfile(output_dir / out_file, out_file)
+
     if Path(out_file).exists():
         with jsonlines.open(out_file) as f:
             num_results = sum(1 for line in f)
@@ -90,12 +97,6 @@ async def main(args):
     lines = []
     count = 0
     retries = 5
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Restoring the file from the output dir, so we continue processing from last stopped.
-    if args.restore and Path(output_dir / out_file).exists():
-        shutil.copyfile(output_dir / out_file, out_file)
 
     with jsonlines.open(in_file, 'r') as f:
         for line in f:
