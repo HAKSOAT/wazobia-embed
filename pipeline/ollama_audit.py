@@ -92,6 +92,11 @@ async def main(args):
     retries = 5
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Restoring the file from the output dir, so we continue processing from last stopped.
+    if args.restore and Path(output_dir / out_file).exists():
+        shutil.copyfile(output_dir / out_file, out_file)
+
     with jsonlines.open(in_file, 'r') as f:
         for line in f:
             count += 1
@@ -100,6 +105,7 @@ async def main(args):
 
             lines.append(line)
             if len(lines) == args.batch_size:
+                error = None
                 for _ in range(retries):
                     try:
                         responses = await asyncio.gather(*[chat(language, line["pos"][0], model=args.model) for line in lines])
@@ -107,9 +113,10 @@ async def main(args):
                         break
                     except Exception as exc:
                         print(f"Error: {exc}")
+                        error = exc
                         time.sleep(10)
                 else:
-                    raise Exception("All retries failed") from exc
+                    raise Exception("All retries failed") from error
 
                 with jsonlines.open(out_file, 'a') as f:
                     f.write_all(results)
@@ -129,8 +136,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="gemma3:27b")
     parser.add_argument("--language", type=str, default="Yoruba")
-    parser.add_argument("--batch_size", type=str, default=20)
+    parser.add_argument("--batch_size", type=int, default=20)
     parser.add_argument("--output_dir", type=str, default="/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/combine_wura_all_langs")
+    parser.add_argument("--restore", type=bool, default=True)
     args = parser.parse_args()
 
     ollama.pull(args.model)
