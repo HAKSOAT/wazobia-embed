@@ -49,6 +49,17 @@ def truncate_text(text, max_tokens):
     return truncated_text
 
 
+def skip(text, query=None):
+    """Function based on analysis of done audits, to avoid spending time on unnecessary rows"""
+    if ("ìgbàjá ástẹ́rọ́ìdì" in text) or (not text.strip()):
+        return True
+    if query and text.startswith(query):
+        mod_text = text.strip(query).strip()
+        if len(mod_text.split()) < 30:
+            return True
+    return False
+
+
 PROMPT_TOKEN_SIZE = count_tokens(syntactic)
 
 
@@ -57,7 +68,7 @@ async def chat(language, text, token_limit=2048, model="gemma3:27b"):
   token_size = count_tokens(full_prompt)
   if token_size > token_limit:
     remaining_tokens = token_limit - PROMPT_TOKEN_SIZE
-    gap_size = 100
+    gap_size = 500
     final_text = truncate_text(text, remaining_tokens-gap_size)
     final_prompt = syntactic.format(language=language, text=final_text)
   else:
@@ -84,7 +95,7 @@ async def main(args):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Restoring the file from the output dir, so we continue processing from last stopped.
-    if args.restore and Path(output_dir / out_file).exists():
+    if not Path(out_file).exists() and args.restore and Path(output_dir / out_file).exists():
         shutil.copyfile(output_dir / out_file, out_file)
 
     if Path(out_file).exists():
@@ -93,10 +104,13 @@ async def main(args):
     else:
         num_results = 0
 
-    results = []
+    results = [None] * args.batch_size
     lines = []
     count = 0
     retries = 5
+
+    with jsonlines.open(in_file, 'r') as f:
+        num_rows = sum(1 for line in f)
 
     with jsonlines.open(in_file, 'r') as f:
         for line in f:
@@ -105,12 +119,21 @@ async def main(args):
                 continue
 
             lines.append(line)
-            if len(lines) == args.batch_size:
+            if len(lines) == args.batch_size or count == num_rows:
                 error = None
                 for _ in range(retries):
                     try:
-                        responses = await asyncio.gather(*[chat(language, line["pos"][0], model=args.model) for line in lines])
-                        results.extend(responses)
+                        tasks = []
+                        for idx, line in enumerate(lines):
+                            if skip(line["pos"][0], line["query"]):
+                                results[idx] = {"category": "SKIP", "reason": "SKIP", "message": "SKIP"}
+                            else:
+                                tasks.append(chat(language, line["pos"][0], model=args.model))
+
+                        responses = await asyncio.gather(*tasks)
+                        for idx, result in enumerate(results):
+                            if result is None:
+                                results[idx] = responses.pop(0)
                         break
                     except Exception as exc:
                         print(f"Error: {exc}")
@@ -126,7 +149,7 @@ async def main(args):
                 num_results += len(results)
                 print(f"Done {num_results}")
                 lines = []
-                results = []
+                results = [None] * args.batch_size
 
     with jsonlines.open(out_file, 'a') as f:
         f.write_all(results)

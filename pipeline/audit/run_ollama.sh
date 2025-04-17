@@ -14,6 +14,6 @@ while true; do
     # Start fresh
     OLLAMA_HOST="0.0.0.0:11434" OLLAMA_FLASH_ATTENTION=1 nohup ollama serve > ollama.log 2>&1 &
 
-    # Wait 15 minutes
-    sleep 900
+    # Wait 5 minutes
+    sleep 300
 done
