@@ -40,7 +40,7 @@ def make_dataset(df, duplicate_rows=False, filename="train_dataset.jsonl"):
 
     # The BGE M3 expects a list of values
     df["pos"] = df["pos"].apply(lambda x: [x])
-    df = df.loc[:, ["query", "pos", "neg"]]
+    df = df.loc[:, ["query", "pos", "neg", "url", "source"]]
     seed = 42
     df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
     df.to_json(filename, orient="records", lines=True)
@@ -54,6 +54,7 @@ def make_hausa_df():
     # using the same link as a negative, as at the moment, negatives are being sampled using n-1.
     df1 = df1.drop_duplicates(["link"])
     df1.rename(columns={"link": "url"}, inplace=True)
+    df1["source"] = "mato"
     df = unify_datasources([df1], wura_data)
 
     return df
@@ -63,8 +64,11 @@ def make_yoruba_df():
     """Combines collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
     wura_data = load_dataset("castorini/wura", "yor", level="document", verification_mode="no_checks", trust_remote_code=True)
     df1 = pd.read_csv('alaroye_mato_10k.tsv', delimiter="\t")
+    df1["source"] = "mato"
     df2 = pd.read_csv('von_mato_6k.tsv', delimiter="\t")
+    df2["source"] = "mato"
     df3 = pd.read_csv('masakhanews_1k.tsv', delimiter="\t")
+    df3["source"] = "masakhanews"
 
     df2.rename(columns={'link': 'url'}, inplace=True)
     df3.rename(columns={'headline': 'title'}, inplace=True)
@@ -79,6 +83,7 @@ def make_igbo_df():
     df1 = pd.read_csv("igbo_mato_3k.tsv", delimiter="\t")
 
     df1.rename(columns={"link": "url"}, inplace=True)
+    df1["source"] = "mato"
     df = unify_datasources([df1], wura_data)
 
     return df
