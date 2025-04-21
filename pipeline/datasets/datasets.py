@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np
 from datasets import load_dataset
+from sklearn.model_selection import train_test_split
 
-from pipeline.datasets.utils import unify_datasources
+from pipeline.datasets.utils import unify_datasources, prepare_wura, SEED
 
 
-def make_dataset(df, duplicate_rows=False, filename="train_dataset.jsonl"):
+def make_train_dataset(df, duplicate_rows=False, filename="train_dataset.jsonl"):
     """In this version of make dataset, no longer split into train and eval, because eval and test datasets are currently gotten from wura."""
     df_count = len(df)
     df["neg"] = None
@@ -20,7 +21,8 @@ def make_dataset(df, duplicate_rows=False, filename="train_dataset.jsonl"):
             size = 6
 
         while not picked:
-            indexes = np.random.choice(df_count, size=size, replace=False)
+            rng = np.random.default_rng(SEED)
+            indexes = rng.choice(df_count, size=size, replace=False)
             if row.name not in indexes:
                 picked = True
 
@@ -87,3 +89,28 @@ def make_igbo_df():
     df = unify_datasources([df1], wura_data)
 
     return df
+
+
+def make_nontrain_dataset(language, eval_filename="eval_dataset.jsonl", test_filename="test_dataset.jsonl"):
+    if language.lower() not in ["yoruba", "igbo", "hausa"]:
+        raise ValueError("Language must be Yoruba, Igbo or Hausa")
+    wura_lang = "ibo" if language == "igbo" else language.lower()
+    dataset = load_dataset("castorini/wura", wura_lang, level="document", trust_remote_code=True)
+    validation_data = dataset.get("validation")
+
+    if not validation_data:
+        raise ValueError(f"Dataset {wura_lang} does not have a validation split. Only found {dataset.keys()} splits.")
+    
+    lang_df = prepare_wura(validation_data)
+    lang_df.rename(columns={"text": "pos", "title": "query"}, inplace=True)
+    eval_df, test_df = train_test_split(lang_df, test_size=0.4, random_state=SEED, shuffle=True)
+    split_dfs = {}
+    if eval_filename:
+        eval_df.to_json(eval_filename, orient="records", lines=True)
+        split_dfs["eval"] = eval_df
+
+    if test_filename:
+        test_df.to_json(test_filename, orient="records", lines=True)
+        split_dfs["test"] = test_df
+    
+    return split_dfs

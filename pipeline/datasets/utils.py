@@ -3,6 +3,8 @@ from urllib.parse import urlparse
 import pandas as pd
 from datasets import arrow_dataset
 
+SEED = 42
+
 
 def extract_domain_name(url):
     try:
@@ -46,7 +48,8 @@ def prepare_wura(dataset):
         data.append({
             "title": row["headline"],
             "url": row["url"].strip("/") + "/", "text": row["content"],
-            "category": row["category"]
+            "category": row["category"],
+            "source": "wura"
         })
 
     wura_df = pd.DataFrame(data)

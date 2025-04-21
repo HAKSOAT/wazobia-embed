@@ -3,13 +3,13 @@ import asyncio
 import re
 import shutil
 import time
+import traceback
 from pathlib import Path
 
 import jsonlines
 import ollama
 import tiktoken
 from ollama import chat, AsyncClient
-
 
 
 syntactic = """
@@ -88,47 +88,75 @@ async def main(args):
     if language.lower() not in ["yoruba", "igbo", "hausa"]:
         raise ValueError("Language must be Yoruba, Igbo or Hausa")
 
-    out_file = f"{language.lower()}_{args.model.replace(':', '_')}_results.jsonl"
-    in_file = f"{language.lower()}_train_dataset.jsonl"
-
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if args.split == "train":
+        dir_ = Path("/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/combine_wura_all_langs")
+        out_file = f"{language.lower()}_{args.model.replace(':', '_')}_results.jsonl"
+        in_file = f"{language.lower()}_train_dataset.jsonl"
+    elif args.split == "eval":
+        dir_ = Path(f"/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/static_wura/{language.lower()}")
+        out_file = f"{language.lower()}_{args.model.replace(':', '_')}_eval_results.jsonl"
+        in_file = f"{language.lower()}_eval_dataset.jsonl"
+    elif args.split == "test":
+        dir_ = Path(f"/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/static_wura/{language.lower()}")
+        out_file = f"{language.lower()}_{args.model.replace(':', '_')}_test_results.jsonl"
+        in_file = f"{language.lower()}_test_dataset.jsonl"
+    else:
+        raise ValueError("Split must be train, eval or test")
+    
+    if not (dir_/in_file).exists():
+        raise RuntimeError(f"Input file {dir_/in_file} does not exist")
+                
+    shutil.copyfile(dir_ / in_file, in_file)
 
     # Restoring the file from the output dir, so we continue processing from last stopped.
-    if not Path(out_file).exists() and args.restore and Path(output_dir / out_file).exists():
-        shutil.copyfile(output_dir / out_file, out_file)
+    if not Path(out_file).exists() and args.restore and Path(dir_ / out_file).exists():
+        shutil.copyfile(dir_ / out_file, out_file)
 
     if Path(out_file).exists():
         with jsonlines.open(out_file) as f:
-            num_results = sum(1 for line in f)
+            # allow_none is handling a bug in previous processing where
+            # some lines were None
+            num_results = sum(1 for line in f.iter(allow_none=True) if line)
     else:
         num_results = 0
 
-    results = [None] * args.batch_size
+    results = None
     lines = []
     count = 0
     retries = 5
 
     with jsonlines.open(in_file, 'r') as f:
-        num_rows = sum(1 for line in f)
+        # allow_none is handling a bug in previous processing where
+        # some lines were None
+        num_rows = sum(1 for line in f.iter(allow_none=True) if line)
 
     with jsonlines.open(in_file, 'r') as f:
-        for line in f:
+        for line in f.iter(allow_none=True):
             count += 1
             if count <= num_results:
                 continue
 
             lines.append(line)
             if len(lines) == args.batch_size or count == num_rows:
+                results = [None] * min(args.batch_size, len(lines))
                 error = None
                 for _ in range(retries):
                     try:
                         tasks = []
                         for idx, line in enumerate(lines):
-                            if skip(line["pos"][0], line["query"]):
+                            if isinstance(line["pos"], list):
+                                chat_text = line["pos"][0]
+                            elif isinstance(line["pos"], str):
+                                chat_text = line["pos"]
+                            else:
+                                raise ValueError("pos must be a string or a list of strings")
+
+                            if not chat_text:
+                                results[idx] = {"category": "EMPTYTEXT", "reason": "EMPTYTEXT", "message": "EMPTYTEXT"}
+                            elif skip(chat_text, line["query"]):
                                 results[idx] = {"category": "SKIP", "reason": "SKIP", "message": "SKIP"}
                             else:
-                                tasks.append(chat(language, line["pos"][0], model=args.model))
+                                tasks.append(chat(language, chat_text, model=args.model))
 
                         responses = await asyncio.gather(*tasks)
                         for idx, result in enumerate(results):
@@ -136,7 +164,9 @@ async def main(args):
                                 results[idx] = responses.pop(0)
                         break
                     except Exception as exc:
-                        print(f"Error: {exc}")
+                        results = [None] * min(args.batch_size, len(lines))
+                        print(line)
+                        print(f"Error: {traceback.format_exc()}")
                         error = exc
                         time.sleep(10)
                 else:
@@ -144,24 +174,18 @@ async def main(args):
 
                 with jsonlines.open(out_file, 'a') as f:
                     f.write_all(results)
-                shutil.copyfile(out_file, output_dir / out_file)
+                shutil.copyfile(out_file, dir_ / out_file)
 
                 num_results += len(results)
                 print(f"Done {num_results}")
                 lines = []
-                results = [None] * args.batch_size
-
-    with jsonlines.open(out_file, 'a') as f:
-        f.write_all(results)
-    shutil.copyfile(out_file, output_dir / out_file)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="gemma3:27b")
     parser.add_argument("--language", type=str, default="Yoruba")
     parser.add_argument("--batch_size", type=int, default=20)
-    parser.add_argument("--output_dir", type=str, default="/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/combine_wura_all_langs")
+    parser.add_argument("--split", choices=["train", "eval", "test"], default="train")
     parser.add_argument("--restore", type=bool, default=True)
     args = parser.parse_args()
 
