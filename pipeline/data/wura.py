@@ -1,18 +1,8 @@
-from urllib.parse import urlparse
-
 import pandas as pd
 from datasets import arrow_dataset
 
-SEED = 42
-
-
-def extract_domain_name(url):
-    try:
-        parsed_url = urlparse(url)
-        netloc = str(parsed_url.netloc)
-        return netloc.strip("www.")
-    except ValueError:
-        return None
+from pipeline.data.utils import extract_domain_name
+from pipeline.data.enums import DataSource
 
 
 def prepare_wura(dataset):
@@ -36,7 +26,6 @@ def prepare_wura(dataset):
     is_headline_valid = lambda value: len((value or " ").split()) > 1
     is_url_valid = lambda value: len((value or " ").strip()) > 5
     is_domain_valid = lambda value: domain_counts[value] > 10 and not value in invalid_domains # If the domain does not appear enough times that is a sign that the site is not committed to publishing in the language. So it is probably a weird url or the English was translated using Google translate e.g. https://downloadfacetime.com/facetime/facetime-for-ipad/
-    is_text_valid = lambda value: len((value or " ").strip().split()) > 30
 
     data = []
     for row in dataset:
@@ -49,7 +38,7 @@ def prepare_wura(dataset):
             "title": row["headline"],
             "url": row["url"].strip("/") + "/", "text": row["content"],
             "category": row["category"],
-            "source": "wura"
+            "source": DataSource.wura,
         })
 
     wura_df = pd.DataFrame(data)
@@ -75,25 +64,9 @@ def wura_remove_validation_rows(df, wura_ds):
     return df
 
 
-def unify_datasources(dfs: list, wura_data):
-    for df in dfs:
-        df.columns = df.columns.str.lower()
-        if "sub_topic" not in df.columns:
-            df["sub_topic"] = None
-
-    df = pd.concat(dfs)
-    df = align_with_wura(df, wura_data)
-
-    # dropna for title and text columns
-    key_columns = ["title", "text"]
-    df.dropna(subset=key_columns, inplace=True)
-    return df
-
-
 def align_with_wura(df, wura_data):
     df = wura_remove_validation_rows(df, wura_data["validation"])
     # Combined collected dataset with Wura train dataset
-    # wura_df = make_wura_df(wura_data["train"])
     wura_df = prepare_wura(wura_data["train"])
 
     df_urls = set(df.url)
