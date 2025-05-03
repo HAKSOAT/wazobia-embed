@@ -1,0 +1,192 @@
+import argparse
+from copy import deepcopy
+from functools import reduce
+import math
+import re
+import warnings
+
+import jsonlines
+import numpy as np
+from urllib.parse import urlparse
+
+from pipeline.data.enums import DataSource
+from pipeline.constants import SEED
+
+
+def extract_domain_name(url):
+    try:
+        parsed_url = urlparse(url)
+        netloc = str(parsed_url.netloc)
+        return netloc.strip("www.")
+    except ValueError:
+        return None
+
+
+def fix_wiki_pos(row):
+    query = row["query"].strip()
+
+    if not row.get("root_text"):
+        row["root_text"] = deepcopy(row["pos"])
+
+    pos_is_list = isinstance(row["pos"], list)
+    pos = row["pos"][0] if pos_is_list else row["pos"]
+    substring = f"{query}\n\n"
+    pos = pos[len(substring):] if pos.startswith(substring) else pos
+    query_split = [re.escape(q) for q in query.split()]
+    re_pattern = reduce(lambda a, b:
+                        a +
+                        r"\s*" + # Mandatory space after each word
+                        r"([^\s]+\s*){,2}" + # Potential for 0 to 2 words appearing between query words.
+                        b, query_split)
+    re_sentence = "[^\.]*" + re_pattern + "[^\.]*." # Matches the sentence where the pattern appears
+    try:
+        re_obj = re.compile(re_sentence, re.IGNORECASE)
+    except Exception as exc:
+        print("Error compiling the regex pattern: ", re_sentence)
+        raise exc
+    pos = re_obj.sub("", pos).strip()
+
+    pos = "" if "plánẹ́tì kékeré" in pos else pos # Weird text appearing in Yoruba wiki
+    row["pos"] = [pos] if pos_is_list else pos
+    return row
+
+
+def fix_negatives(row_idx, rows, rng):
+    picked = False
+    size = 7
+
+    while not picked:
+        neg_idxs = rng.choice(len(rows), size=size, replace=False)
+        if row_idx not in neg_idxs:
+            picked = True
+
+    row = rows[row_idx]
+    row["neg"] = [
+        rows[i]["pos"][0]
+        if isinstance(rows[i]["pos"], list) else rows[i]["pos"]
+        for i in neg_idxs
+    ]
+    return row
+
+
+def get_audits(filename, n=100, categories=["X", "NLC"]):
+    lines = []
+    with jsonlines.open(filename, 'r') as f:
+        for line in f.iter(allow_none=True):
+            if not line:
+                continue
+
+            if line["category"] == "PARSE_ERROR":
+                re_cat = "|".join(categories)
+                match = re.search(
+                    r"(?:category>(" + re_cat + r")</category)|(?:Category[^a-zA-Z]*(" + re_cat + "))",
+                    line["message"], re.IGNORECASE
+                )
+                if match:
+                    category = [i for i in match.groups() if i][0]
+                    line["category"] = category
+
+            lines.append(line)
+            if n and len(lines) == n:
+                break
+    return lines
+
+
+def skip(text, query=None):
+    if ("ìgbàjá ástẹ́rọ́ìdì" in text) or (not text.strip()):
+        return True
+    if query and text.startswith(query):
+        mod_text = text.strip(query).strip()
+        if len(mod_text.split()) < 30:
+            return True
+    elif len(text.split()) < 5:
+        return True
+    return False
+
+
+def postprocess_dataset(lines, audits, language):
+    language = language.lower()
+    languages = {"yoruba", "igbo", "hausa"}
+    if language not in languages:
+        raise ValueError(f"Language must be one of {languages}")
+
+    def process_row(row):
+        domain_name = extract_domain_name(row["url"])
+        row = fix_wiki_pos(row) if domain_name.endswith("wikipedia.org") else row
+        row["domain"] = domain_name
+        return row
+
+    if language != "hausa":
+        assert len(lines) == len(audits), f"{len(lines)} != {len(audits)}"
+
+    results = []
+    for i in range(len(audits)):
+        line = lines[i]
+        line = process_row(line)
+        text = line["pos"][0] if isinstance(line["pos"], list) else line["pos"]
+
+        if not text or skip(text, line["query"]):
+            continue
+
+        if audits[i]["category"] not in ["NLC", "SKIP", "EMPTYTEXT"]:
+            results.append(line)
+
+    # Hausa does not have all the audits done.
+    if language == "hausa":
+        for line in lines[len(audits):]:
+            if line["source"] != DataSource.mato:
+                continue
+
+            line = process_row(line)
+            text = line["pos"][0] if isinstance(line["pos"], list) else line["pos"]
+
+            if not text or skip(text, line["query"]):
+                continue
+
+            results.append(line)
+  
+    if "neg" in lines[0]:
+        rng = np.random.default_rng(SEED)
+        results = [fix_negatives(row_idx, results, rng) for row_idx, line in enumerate(results)]
+            
+    return results
+
+
+def sample_data(rows, n=2000):
+    if n > len(rows):
+        warnings.warn(f"All rows were returned at `sample_data` function call. Total number of rows are {len(rows)}, requested to sample {n}")
+        return rows
+
+    # Creating a bin based on text length, so we sample from them equally.
+    idx_bins = [set(), set(), set(), set()]
+    for idx, line in enumerate(rows):
+        text = line["pos"][0] if isinstance(line["pos"], list) else line["pos"]
+        token_size = len(text.split())
+        if token_size <= 512:
+            idx_bins[0].add(idx)
+        elif token_size <= 1024:
+            idx_bins[1].add(idx)
+        elif token_size <= 2048:
+            idx_bins[2].add(idx)
+        else:
+            idx_bins[3].add(idx)
+
+    sample_idxs = set()
+    attempt = 0
+    rng = np.random.default_rng(SEED)
+    while len(sample_idxs) < n:
+        # In the case where some bins are exhausted earlier than others
+        # the desired min is updated based on the remaining number of bins.
+        desired_min = math.ceil((n - len(sample_idxs)) / len(idx_bins))
+        idx = attempt % len(idx_bins)
+        if len(idx_bins[idx]) > desired_min:
+            # Converting to a tuple and then to a set is inefficient.
+            choices = set(rng.choice(tuple(idx_bins[idx]), desired_min, replace=False))
+            sample_idxs.update(choices)
+            idx_bins[idx] = idx_bins[idx] - choices
+        else:
+            sample_idxs.update(idx_bins[idx])
+            idx_bins.pop(idx)
+        attempt += 1
+    samples = [rows[i] for i in sample_idxs]
+    return samples[:n]
