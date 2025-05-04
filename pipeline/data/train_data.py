@@ -1,12 +1,8 @@
-from pathlib import Path
-
-import gdown
 import pandas as pd
 import numpy as np
 from datasets import load_dataset
 
-from pipeline.constants import SEED, ARTEFACTS_DIR
-from pipeline.data.constants import DRIVE_IDS
+from pipeline.constants import SEED
 from pipeline.data.enums import DataSource
 from pipeline.data.wura import align_with_wura
 from pipeline.data.utils import load_artefact

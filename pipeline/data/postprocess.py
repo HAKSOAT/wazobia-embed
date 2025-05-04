@@ -1,17 +1,15 @@
-import argparse
 from copy import deepcopy
 from functools import reduce
 import math
 import re
 import warnings
 
-import jsonlines
 import numpy as np
-from urllib.parse import urlparse
 
 from pipeline.data.enums import DataSource, Language
 from pipeline.constants import SEED
-from pipeline.data.utils import extract_domain_name, load_artefact
+from pipeline.text_utils import skip_doc_body
+from pipeline.data.utils import extract_domain_name, fix_negatives, load_artefact
 
 
 def fix_wiki_pos(row):
@@ -43,24 +41,6 @@ def fix_wiki_pos(row):
     return row
 
 
-def fix_negatives(row_idx, rows, rng):
-    picked = False
-    size = 7
-
-    while not picked:
-        neg_idxs = rng.choice(len(rows), size=size, replace=False)
-        if row_idx not in neg_idxs:
-            picked = True
-
-    row = rows[row_idx]
-    row["neg"] = [
-        rows[i]["pos"][0]
-        if isinstance(rows[i]["pos"], list) else rows[i]["pos"]
-        for i in neg_idxs
-    ]
-    return row
-
-
 def get_audits(filename, n=100, categories=["X", "NLC"]):
     lines = []
     for line in load_artefact(filename):
@@ -81,19 +61,6 @@ def get_audits(filename, n=100, categories=["X", "NLC"]):
         if n and len(lines) == n:
             break
     return lines
-
-
-def skip(text, query=None):
-    if ("ìgbàjá ástẹ́rọ́ìdì" in text) or (not text.strip()):
-        return True
-    if query and text.startswith(query):
-        mod_text = text.strip(query).strip()
-        if len(mod_text.split()) < 30:
-            return True
-    elif len(text.split()) < 5:
-        return True
-    return False
-
 
 def postprocess_dataset(rows, audits, language):
     language = language.lower()
@@ -117,7 +84,7 @@ def postprocess_dataset(rows, audits, language):
         row = process_row(row)
         text = row["pos"][0] if isinstance(row["pos"], list) else row["pos"]
 
-        if not text or skip(text, row["query"]):
+        if not text or skip_doc_body(text, row["query"]):
             continue
 
         if audits[i]["category"] not in ["NLC", "SKIP", "EMPTYTEXT"]:
@@ -132,14 +99,14 @@ def postprocess_dataset(rows, audits, language):
             row = process_row(row)
             text = row["pos"][0] if isinstance(row["pos"], list) else row["pos"]
 
-            if not text or skip(text, row["query"]):
+            if not text or skip_doc_body(text, row["query"]):
                 continue
 
             results.append(row)
   
     if "neg" in rows[0]:
         rng = np.random.default_rng(SEED)
-        results = [fix_negatives(row_idx, results, rng) for row_idx, line in enumerate(results)]
+        results = [fix_negatives(row_idx, results, rng) for row_idx in range(len(results))]
             
     return results
 

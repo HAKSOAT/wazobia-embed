@@ -7,7 +7,7 @@ from pipeline.data.enums import Language
 from pipeline.data.constants import WURA_LANG_ID_MAP
 
 
-def make_nontrain_dataset(language, eval_filename="eval_dataset.jsonl", test_filename="test_dataset.jsonl"):
+def make_eval_test_dataset(language, eval_filename="eval_dataset.jsonl", test_filename="test_dataset.jsonl"):
     if language.lower() not in Language:
         raise ValueError(f"Language must be one of {language}.")
     wura_lang = WURA_LANG_ID_MAP.get(language.lower())

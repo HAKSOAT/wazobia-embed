@@ -10,6 +10,7 @@ from pipeline.data.constants import DRIVE_IDS
 from pipeline.constants import ARTEFACTS_DIR
 
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -45,3 +46,21 @@ def load_artefact(key):
         return pd.read_csv(path, delimiter="\t")
     else:
         raise ValueError(f"Unsupported file format: {path}. Supported formats are .jsonl and .tsv.")
+
+
+def fix_negatives(row_idx, rows, rng):
+    picked = False
+    size = 7
+
+    while not picked:
+        neg_idxs = rng.choice(len(rows), size=size, replace=False)
+        if row_idx not in neg_idxs:
+            picked = True
+
+    row = rows[row_idx]
+    row["neg"] = [
+        rows[i]["pos"][0]
+        if isinstance(rows[i]["pos"], list) else rows[i]["pos"]
+        for i in neg_idxs
+    ]
+    return row
