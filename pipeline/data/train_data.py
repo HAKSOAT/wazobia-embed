@@ -9,6 +9,7 @@ from pipeline.constants import SEED, ARTEFACTS_DIR
 from pipeline.data.constants import DRIVE_IDS
 from pipeline.data.enums import DataSource
 from pipeline.data.wura import align_with_wura
+from pipeline.data.utils import load_artefact
 
 
 def unify_datasources(dfs: list, wura_data):
@@ -68,18 +69,9 @@ def make_train_dataset(df, duplicate_rows=False, filename="train_dataset.jsonl")
     df.to_json(filename, orient="records", lines=True)
 
 
-def load_df_from_drive(key):
-    """Loads the dataset from the drive, and returns a dataframe."""
-    filename = f"{ARTEFACTS_DIR}/{key}.tsv"
-    if not Path(filename).exists():
-        gdown.download(id=DRIVE_IDS[key], output=f"{ARTEFACTS_DIR}/{key}.tsv", quiet=True)
-    df = pd.read_csv(f"{ARTEFACTS_DIR}/{key}.tsv", delimiter="\t")
-    return df
-
 def make_hausa_df():
     wura_data = load_dataset("castorini/wura", "hau", level="document", verification_mode="no_checks", trust_remote_code=True)
-    key = "hausa_mato_81k"
-    df1 = load_df_from_drive(key)
+    df1 = load_artefact("hausa_mato_81k.tsv")
     # Key to note that drop duplicates is being done.
     # Later on, this should be handled better. DUplicates are being dropped here to avoid potentially
     # using the same link as a negative, as at the moment, negatives are being sampled using n-1.
@@ -95,33 +87,28 @@ def make_yoruba_df():
     """Combines collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
     wura_data = load_dataset("castorini/wura", "yor", level="document", verification_mode="no_checks", trust_remote_code=True)
 
-    key = "alaroye_mato_10k"
-    df1 = load_df_from_drive(key)
+    df1 = load_artefact("alaroye_mato_10k.tsv")
     df1["source"] = DataSource.mato
     df1.rename(columns={'Url': 'url'}, inplace=True)
 
-    key = "von_mato_6k"
-    df2 = load_df_from_drive(key)
+    df2 = load_artefact("von_mato_6k.tsv")
     df2["source"] = DataSource.mato
     df2.rename(columns={'link': 'url'}, inplace=True)
 
-    key = "masakhanews_1k"
-    df3 = load_df_from_drive(key)
+    df3 = load_artefact("masakhanews_1k.tsv")
     df3["source"] = DataSource.masakhanews
     df3.rename(columns={'headline': 'title'}, inplace=True)
 
     dfs = [df1, df2, df3]
     dfs = [df.drop_duplicates(["url"]) for df in dfs]
 
-    df = unify_datasources(dfs, wura_data)
-    return df
+    return unify_datasources(dfs, wura_data)
 
 
 def make_igbo_df():
     """Combines collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
     wura_data = load_dataset("castorini/wura", "ibo", level="document", verification_mode="no_checks", trust_remote_code=True)
-    key = "igbo_mato_3k"
-    df1 = load_df_from_drive(key)
+    df1 = load_artefact("igbo_mato_3k.tsv")
     df1["source"] = DataSource.mato
     df1.rename(columns={"link": "url"}, inplace=True)
     df = unify_datasources([df1], wura_data)

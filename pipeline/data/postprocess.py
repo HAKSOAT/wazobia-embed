@@ -9,17 +9,9 @@ import jsonlines
 import numpy as np
 from urllib.parse import urlparse
 
-from pipeline.data.enums import DataSource
+from pipeline.data.enums import DataSource, Language
 from pipeline.constants import SEED
-
-
-def extract_domain_name(url):
-    try:
-        parsed_url = urlparse(url)
-        netloc = str(parsed_url.netloc)
-        return netloc.strip("www.")
-    except ValueError:
-        return None
+from pipeline.data.utils import extract_domain_name, load_artefact
 
 
 def fix_wiki_pos(row):
@@ -38,7 +30,7 @@ def fix_wiki_pos(row):
                         r"\s*" + # Mandatory space after each word
                         r"([^\s]+\s*){,2}" + # Potential for 0 to 2 words appearing between query words.
                         b, query_split)
-    re_sentence = "[^\.]*" + re_pattern + "[^\.]*." # Matches the sentence where the pattern appears
+    re_sentence = r"[^\.]*" + re_pattern + r"[^\.]*." # Matches the sentence where the pattern appears
     try:
         re_obj = re.compile(re_sentence, re.IGNORECASE)
     except Exception as exc:
@@ -71,24 +63,23 @@ def fix_negatives(row_idx, rows, rng):
 
 def get_audits(filename, n=100, categories=["X", "NLC"]):
     lines = []
-    with jsonlines.open(filename, 'r') as f:
-        for line in f.iter(allow_none=True):
-            if not line:
-                continue
+    for line in load_artefact(filename):
+        if not line:
+            continue
 
-            if line["category"] == "PARSE_ERROR":
-                re_cat = "|".join(categories)
-                match = re.search(
-                    r"(?:category>(" + re_cat + r")</category)|(?:Category[^a-zA-Z]*(" + re_cat + "))",
-                    line["message"], re.IGNORECASE
-                )
-                if match:
-                    category = [i for i in match.groups() if i][0]
-                    line["category"] = category
+        if line["category"] == "PARSE_ERROR":
+            re_cat = "|".join(categories)
+            match = re.search(
+                r"(?:category>(" + re_cat + r")</category)|(?:Category[^a-zA-Z]*(" + re_cat + "))",
+                line["message"], re.IGNORECASE
+            )
+            if match:
+                category = [i for i in match.groups() if i][0]
+                line["category"] = category
 
-            lines.append(line)
-            if n and len(lines) == n:
-                break
+        lines.append(line)
+        if n and len(lines) == n:
+            break
     return lines
 
 
@@ -104,11 +95,12 @@ def skip(text, query=None):
     return False
 
 
-def postprocess_dataset(lines, audits, language):
+def postprocess_dataset(rows, audits, language):
     language = language.lower()
-    languages = {"yoruba", "igbo", "hausa"}
-    if language not in languages:
-        raise ValueError(f"Language must be one of {languages}")
+    if language not in Language:
+        raise ValueError(f"Language must be one of {Language}")
+    
+    language = Language(language)
 
     def process_row(row):
         domain_name = extract_domain_name(row["url"])
@@ -116,36 +108,36 @@ def postprocess_dataset(lines, audits, language):
         row["domain"] = domain_name
         return row
 
-    if language != "hausa":
-        assert len(lines) == len(audits), f"{len(lines)} != {len(audits)}"
+    if language != Language.hausa:
+        assert len(rows) == len(audits), f"{len(rows)} != {len(audits)}"
 
     results = []
     for i in range(len(audits)):
-        line = lines[i]
-        line = process_row(line)
-        text = line["pos"][0] if isinstance(line["pos"], list) else line["pos"]
+        row = rows[i]
+        row = process_row(row)
+        text = row["pos"][0] if isinstance(row["pos"], list) else row["pos"]
 
-        if not text or skip(text, line["query"]):
+        if not text or skip(text, row["query"]):
             continue
 
         if audits[i]["category"] not in ["NLC", "SKIP", "EMPTYTEXT"]:
-            results.append(line)
+            results.append(row)
 
     # Hausa does not have all the audits done.
-    if language == "hausa":
-        for line in lines[len(audits):]:
-            if line["source"] != DataSource.mato:
+    if language == Language.hausa:
+        for row in rows[len(audits):]:
+            if row["source"] != DataSource.mato:
                 continue
 
-            line = process_row(line)
-            text = line["pos"][0] if isinstance(line["pos"], list) else line["pos"]
+            row = process_row(row)
+            text = row["pos"][0] if isinstance(row["pos"], list) else row["pos"]
 
-            if not text or skip(text, line["query"]):
+            if not text or skip(text, row["query"]):
                 continue
 
-            results.append(line)
+            results.append(row)
   
-    if "neg" in lines[0]:
+    if "neg" in rows[0]:
         rng = np.random.default_rng(SEED)
         results = [fix_negatives(row_idx, results, rng) for row_idx, line in enumerate(results)]
             
@@ -154,7 +146,8 @@ def postprocess_dataset(lines, audits, language):
 
 def sample_data(rows, n=2000):
     if n > len(rows):
-        warnings.warn(f"All rows were returned at `sample_data` function call. Total number of rows are {len(rows)}, requested to sample {n}")
+        warning_msg = f"All rows were returned at `sample_data` function call. Total number of rows are {len(rows)}, requested to sample {n}"
+        warnings.warn(warning_msg)
         return rows
 
     # Creating a bin based on text length, so we sample from them equally.

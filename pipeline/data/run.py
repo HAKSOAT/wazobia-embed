@@ -1,51 +1,61 @@
 import argparse
+import logging
 
 import jsonlines
 
-from pipeline.data.utils import load_jsonl
+from pipeline.data.utils import load_artefact
+from pipeline.data.enums import Language, DataSplit
 from pipeline.constants import ARTEFACTS_DIR
 from pipeline.data.train_data import make_hausa_df, make_igbo_df, make_yoruba_df, make_train_dataset
 from pipeline.data.nontrain_data import make_nontrain_dataset
 from postprocess import get_audits, postprocess_dataset, sample_data
 
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 def main(args):
     language = args.language.lower()
+    language = Language(language)
     if args.operation == "creation":
         processors = {
-            "yoruba": make_yoruba_df,
-            "igbo": make_igbo_df,
-            "hausa": make_hausa_df
+            Language.yoruba: make_yoruba_df,
+            Language.igbo: make_igbo_df,
+            Language.hausa: make_hausa_df,
         }
 
-        if args.split == "train":
+        if args.split == DataSplit.train:
             make_train_dataset(processors.get(language)(), filename=f"{ARTEFACTS_DIR}/{language}_train_dataset.jsonl")
-        elif args.split == "eval":
+            logger.info(f"Train dataset created for {language} and saved to {ARTEFACTS_DIR}/{language}_train_dataset.jsonl")
+        elif args.split == DataSplit.eval:
             make_nontrain_dataset(language, eval_filename=f"{ARTEFACTS_DIR}/{language}_eval_dataset.jsonl", test_filename=None)
-        elif args.split == "test":
+            logger.info(f"Eval dataset created for {language} and saved to {ARTEFACTS_DIR}/{language}_eval_dataset.jsonl")
+        elif args.split == DataSplit.test:
             make_nontrain_dataset(language, eval_filename=None, test_filename=f"{ARTEFACTS_DIR}/{language}_test_dataset.jsonl")
+            logger.info(f"Test dataset created for {language} and saved to {ARTEFACTS_DIR}/{language}_test_dataset.jsonl")
         else:
-            raise ValueError("Invalid split. Choose from 'train', 'eval', or 'test'.")
+            raise ValueError(f"Invalid split. Choose from {DataSplit}.")
     elif args.operation == "postprocess":
-        lines = load_jsonl(f"{args.lang}_{args.split}_dataset.jsonl")
+        rows = load_artefact(f"{args.language}_{args.split}_dataset.jsonl")
         model_name = "gemma3_27b"
-        audits = get_audits(f"{args.lang}_{model_name}_{args.split}_results.jsonl", n=None)
-        filtered_lines = postprocess_dataset(lines, audits, args.lang)
+        audits = get_audits(f"{args.language}_{model_name}_{args.split}_results.jsonl", n=None)
+        filtered_lines = postprocess_dataset(rows, audits, args.language)
 
-        fname = f"filtered_{args.lang}_{args.split}_dataset.jsonl"
-        with jsonlines.open(fname, "w") as f_:
-            if "test" in fname or "eval" in fname:
+        filepath = f"{ARTEFACTS_DIR}/filtered_{args.language}_{args.split}_dataset.jsonl"
+        with jsonlines.open(filepath, "w") as f_:
+            if DataSplit.test in filepath or DataSplit.eval in filepath:
                 f_.write_all(sample_data(filtered_lines, n=2000))
             else:
                 f_.write_all(filtered_lines)
-            print(f"Written to {fname}")
+        logger.info(f"Filtered dataset created for {args.language} and saved to {filepath}")
     else:
         raise ValueError("Invalid operation. Choose from 'creation' or 'postprocess'.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--language", choices=["yoruba", "igbo", "hausa"], type=str.lower, required=True, help="Language to use for the dataset.")
-    parser.add_argument("--split", choices=["train", "eval", "test"], default="train", help="Dataset split to postprocess.")
+    parser.add_argument("--language", choices=Language, type=str.lower, required=True, help="Language to use for the dataset.")
+    parser.add_argument("--split", choices=DataSplit, default="train", help="Dataset split to postprocess.")
     parser.add_argument("--operation", choices=["creation", "postprocess"], default="creation", help="Data operation to perform.")
     args = parser.parse_args()
 
