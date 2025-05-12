@@ -62,7 +62,10 @@ def main(args):
         rows = make_english_dataset(args.split)
         filepath = f"{ARTEFACTS_DIR}/filtered_{args.language}_{args.split}_dataset.jsonl"
         with jsonlines.open(filepath, "w") as f_:
-            f_.write_all(rows)
+            if DataSplit.test in filepath or DataSplit.eval in filepath:
+                f_.write_all(sample_data(rows, n=2000))
+            else:
+                f_.write_all(rows)
         logger.info(f"Filtered dataset translated for {args.language} and saved to {filepath}.")
     else:
         raise ValueError("Invalid operation. Choose from 'creation' or 'postprocess'.")

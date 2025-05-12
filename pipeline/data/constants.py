@@ -50,6 +50,14 @@ DRIVE_IDS = {
     "yoruba_english_gemma3_27b_eval_results.jsonl": "1-2KtZ9CTQmmUcrtmzPeUTEtKnw-XWiZY",
     "igbo_english_gemma3_27b_eval_results.jsonl": "1--hiYF6D89_GyxvNQ_WfT_w4l5Jjvbk8",
     "hausa_english_gemma3_27b_eval_results.jsonl": "1pMUp_gBJvThw2jBoe5mlt4VO6Prv_wm8",
+
+    "yoruba_english_gemma3_27b_test_results.jsonl": "1-R1M5MlPGLwlUOBIKxAYT6XI9SZsR2lj",
+    "igbo_english_gemma3_27b_test_results.jsonl": "1--jAmqtEbki_hCQOpk_uXH-27aP00_pf",
+    "hausa_english_gemma3_27b_test_results.jsonl": "13hBAJN4FazrCmpN2GGRl1kO3aDG6vLQQ",
+
+    "filtered_english_train_dataset.jsonl": "1-9s4lsREcIemnva5yMzsTng2cwyvUk0n",
+    "filtered_english_eval_dataset.jsonl": "1nFsb1y9RpvHDfrpw1JS_9Mrq3vFUzF6_",
+    "filtered_english_test_dataset.jsonl": "1UDAxYEGOXRLMjEp9me3iAiuKKvUXwlwv",
 }
 
 WURA_LANG_ID_MAP = {
