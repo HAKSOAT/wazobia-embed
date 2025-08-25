@@ -1,15 +1,19 @@
 import argparse
 import asyncio
 import re
-import shutil
 import time
 import traceback
 from pathlib import Path
 
 import jsonlines
 import ollama
-import tiktoken
+
 from ollama import chat, AsyncClient
+
+from pipeline.constants import ARTEFACTS_DIR
+from pipeline.data.utils import load_artefact
+from pipeline.text_utils import count_tokens, truncate_text, skip_doc_body
+from pipeline.data.enums import DataSplit, Language
 
 
 syntactic = """
@@ -35,159 +39,112 @@ Populate the following tags with your answer:
 <reason></reason>
 """
 
-def count_tokens(text):
-    encoding = tiktoken.get_encoding("gpt2")
-    token_ids = encoding.encode(text)
-    return len(token_ids)
-
-
-def truncate_text(text, max_tokens):
-    encoding = tiktoken.get_encoding("gpt2")
-    token_ids = encoding.encode(text)
-    truncated_token_ids = token_ids[:max_tokens]
-    truncated_text = encoding.decode(truncated_token_ids)
-    return truncated_text
-
-
-def skip(text, query=None):
-    """Function based on analysis of done audits, to avoid spending time on unnecessary rows"""
-    if ("ìgbàjá ástẹ́rọ́ìdì" in text) or (not text.strip()):
-        return True
-    if query and text.startswith(query):
-        mod_text = text.strip(query).strip()
-        if len(mod_text.split()) < 30:
-            return True
-    return False
-
-
 PROMPT_TOKEN_SIZE = count_tokens(syntactic)
 
 
 async def chat(language, text, token_limit=2048, model="gemma3:27b"):
-  full_prompt = syntactic.format(language=language, text=text)
-  token_size = count_tokens(full_prompt)
-  if token_size > token_limit:
-    remaining_tokens = token_limit - PROMPT_TOKEN_SIZE
-    gap_size = 500
-    final_text = truncate_text(text, remaining_tokens-gap_size)
-    final_prompt = syntactic.format(language=language, text=final_text)
-  else:
-    final_prompt = full_prompt
+    full_prompt = syntactic.format(language=language.capitalize(), text=text)
+    token_size = count_tokens(full_prompt)
+    if token_size > token_limit:
+        remaining_tokens = token_limit - PROMPT_TOKEN_SIZE
+        gap_size = 500
+        final_text = truncate_text(text, remaining_tokens-gap_size)
+        final_prompt = syntactic.format(language=language.capitalize(), text=final_text)
+    else:
+        final_prompt = full_prompt
 
-  message = {'role': 'user', 'content': final_prompt}
-  response = await AsyncClient().chat(model=model, messages=[message])
-  label = re.search(r"<category>(.*?)</category>", response.message.content)
-  label = label.group(1) if label else "PARSE_ERROR"
-  reason = re.search(r"<reason>(.*?)</reason>", response.message.content)
-  reason = reason.group(1) if reason else "PARSE_ERROR"
-  return {"category": label, "reason": reason, "message": response.message.content}
+    message = {'role': 'user', 'content': final_prompt}
+    response = await AsyncClient().chat(model=model, messages=[message])
+    label = re.search(r"<category>(.*?)</category>", response.message.content)
+    label = label.group(1) if label else "PARSE_ERROR"
+    reason = re.search(r"<reason>(.*?)</reason>", response.message.content)
+    reason = reason.group(1) if reason else "PARSE_ERROR"
+    return {"category": label, "reason": reason, "message": response.message.content}
 
 
 async def main(args):
     language = args.language
-    if language.lower() not in ["yoruba", "igbo", "hausa"]:
-        raise ValueError("Language must be Yoruba, Igbo or Hausa")
-
-    if args.split == "train":
-        dir_ = Path("/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/combine_wura_all_langs")
-        out_file = f"{language.lower()}_{args.model.replace(':', '_')}_results.jsonl"
-        in_file = f"{language.lower()}_train_dataset.jsonl"
-    elif args.split == "eval":
-        dir_ = Path(f"/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/static_wura/{language.lower()}")
-        out_file = f"{language.lower()}_{args.model.replace(':', '_')}_eval_results.jsonl"
-        in_file = f"{language.lower()}_eval_dataset.jsonl"
-    elif args.split == "test":
-        dir_ = Path(f"/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/static_wura/{language.lower()}")
-        out_file = f"{language.lower()}_{args.model.replace(':', '_')}_test_results.jsonl"
-        in_file = f"{language.lower()}_test_dataset.jsonl"
-    else:
-        raise ValueError("Split must be train, eval or test")
-    
-    if not (dir_/in_file).exists():
-        raise RuntimeError(f"Input file {dir_/in_file} does not exist")
+    if language.lower() not in DataSplit:
+        raise ValueError(f"Language must be one of {Language}. Got {language.lower()}")
                 
-    shutil.copyfile(dir_ / in_file, in_file)
-
-    # Restoring the file from the output dir, so we continue processing from last stopped.
-    if not Path(out_file).exists() and args.restore and Path(dir_ / out_file).exists():
-        shutil.copyfile(dir_ / out_file, out_file)
-
-    if Path(out_file).exists():
-        with jsonlines.open(out_file) as f:
-            # allow_none is handling a bug in previous processing where
-            # some lines were None
-            num_results = sum(1 for line in f.iter(allow_none=True) if line)
+    if Path(args.output_path).exists():
+        with jsonlines.open(args.output_path) as f:
+            # allow_none is handling a bug in previous processing where some lines were None
+            start_num_rows = sum(1 for line in f.iter(allow_none=True) if line)
     else:
-        num_results = 0
+        start_num_rows = 0
 
     results = None
-    lines = []
-    count = 0
     retries = 5
 
-    with jsonlines.open(in_file, 'r') as f:
-        # allow_none is handling a bug in previous processing where
-        # some lines were None
-        num_rows = sum(1 for line in f.iter(allow_none=True) if line)
+    input_rows = load_artefact(args.input_path)
+    num_input_rows = len(input_rows)
 
-    with jsonlines.open(in_file, 'r') as f:
-        for line in f.iter(allow_none=True):
-            count += 1
-            if count <= num_results:
-                continue
+    batch = []
+    for count, line in enumerate(input_rows[start_num_rows:], start=start_num_rows+1):
+        batch.append(line)
+        if not (len(batch) == args.batch_size or count == num_input_rows):
+            continue
 
-            lines.append(line)
-            if len(lines) == args.batch_size or count == num_rows:
-                results = [None] * min(args.batch_size, len(lines))
-                error = None
-                for _ in range(retries):
-                    try:
-                        tasks = []
-                        for idx, line in enumerate(lines):
-                            if isinstance(line["pos"], list):
-                                chat_text = line["pos"][0]
-                            elif isinstance(line["pos"], str):
-                                chat_text = line["pos"]
-                            else:
-                                raise ValueError("pos must be a string or a list of strings")
+        # Setting up retries because the run_ollama.sh is set to restart Ollama after some intervals.
+        # Hence, we need to retry the request if it fails on such occassions.
+        for _ in range(retries):
+            try:
+                results = [None] * min(args.batch_size, len(batch))
+                tasks = []
+                for idx, line in enumerate(batch):
+                    if isinstance(line["pos"], list):
+                        chat_text = line["pos"][0]
+                    elif isinstance(line["pos"], str):
+                        chat_text = line["pos"]
+                    else:
+                        raise ValueError("pos must be a string or a list of strings")
 
-                            if not chat_text:
-                                results[idx] = {"category": "EMPTYTEXT", "reason": "EMPTYTEXT", "message": "EMPTYTEXT"}
-                            elif skip(chat_text, line["query"]):
-                                results[idx] = {"category": "SKIP", "reason": "SKIP", "message": "SKIP"}
-                            else:
-                                tasks.append(chat(language, chat_text, model=args.model))
+                    if not chat_text:
+                        results[idx] = {"category": "EMPTYTEXT", "reason": "EMPTYTEXT", "message": "EMPTYTEXT"}
+                    elif skip_doc_body(chat_text, line["query"]):
+                        results[idx] = {"category": "SKIP", "reason": "SKIP", "message": "SKIP"}
+                    else:
+                        tasks.append(chat(language, chat_text, model=args.model))
 
-                        responses = await asyncio.gather(*tasks)
-                        for idx, result in enumerate(results):
-                            if result is None:
-                                results[idx] = responses.pop(0)
-                        break
-                    except Exception as exc:
-                        results = [None] * min(args.batch_size, len(lines))
-                        print(line)
-                        print(f"Error: {traceback.format_exc()}")
-                        error = exc
-                        time.sleep(10)
-                else:
-                    raise Exception("All retries failed") from error
-
-                with jsonlines.open(out_file, 'a') as f:
+                responses = await asyncio.gather(*tasks)
+                for idx, result in enumerate(results):
+                    if result is None:
+                        results[idx] = responses.pop(0)
+                
+                with jsonlines.open(args.output_path, 'a') as f:
                     f.write_all(results)
-                shutil.copyfile(out_file, dir_ / out_file)
 
-                num_results += len(results)
-                print(f"Done {num_results}")
-                lines = []
+                print(f"Done {count}")
+                batch = []
+            except Exception as exc:
+                print(line)
+                print(f"Error: {traceback.format_exc()}")
+                time.sleep(10)
+        else:
+            raise Exception("All retries failed") from exc
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="gemma3:27b")
-    parser.add_argument("--language", type=str, default="Yoruba")
+    parser.add_argument("--language", choices=Language, default="yoruba", type=str.lower)
     parser.add_argument("--batch_size", type=int, default=20)
-    parser.add_argument("--split", choices=["train", "eval", "test"], default="train")
-    parser.add_argument("--restore", type=bool, default=True)
+    parser.add_argument("--split", choices=DataSplit, default="train", type=str.lower)
+    parser.add_argument("--input_path", type=str)
+    parser.add_argument("--output_path", type=str)
     args = parser.parse_args()
+
+    language = args.language.lower()
+    if not args.input_path:
+        if args.split in DataSplit:
+            args.input_path = f"{language.lower()}_{args.split}_dataset.jsonl"
+        else:
+            raise ValueError(f"Split must be one of {DataSplit}. Got {args.split}")
+        
+    if not args.output_path:
+        if args.split in DataSplit:
+            args.output_path = f"{ARTEFACTS_DIR}/{language.lower()}_{args.model.replace(':', '_')}_{args.split}_results.jsonl"
 
     ollama.pull(args.model)
     asyncio.run(main(args))

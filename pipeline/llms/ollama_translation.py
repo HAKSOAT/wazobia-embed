@@ -8,8 +8,10 @@ from pathlib import Path
 
 import jsonlines
 import ollama
-import tiktoken
+
 from ollama import chat, AsyncClient
+
+from pipeline.text_utils import count_tokens, truncate_text, skip_doc_body
 
 
 syntactic = """
@@ -28,19 +30,6 @@ Populate the following tags with your answer:
 Give a one sentence explanation of the translation action taken with the following tag:
 <reason></reason>
 """
-
-def count_tokens(text):
-    encoding = tiktoken.get_encoding("gpt2")
-    token_ids = encoding.encode(text)
-    return len(token_ids)
-
-
-def truncate_text(text, max_tokens):
-    encoding = tiktoken.get_encoding("gpt2")
-    token_ids = encoding.encode(text)
-    truncated_token_ids = token_ids[:max_tokens]
-    truncated_text = encoding.decode(truncated_token_ids)
-    return truncated_text
 
 
 PROMPT_TOKEN_SIZE = count_tokens(syntactic)
