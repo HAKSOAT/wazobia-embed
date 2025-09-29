@@ -88,6 +88,7 @@ async def main(args):
 
         # Setting up retries because the run_ollama.sh is set to restart Ollama after some intervals.
         # Hence, we need to retry the request if it fails on such occassions.
+        last_exc = None
         for _ in range(retries):
             try:
                 results = [None] * min(args.batch_size, len(batch))
@@ -117,12 +118,14 @@ async def main(args):
 
                 print(f"Done {count}")
                 batch = []
+                break
             except Exception as exc:
                 print(line)
                 print(f"Error: {traceback.format_exc()}")
+                last_exc = exc
                 time.sleep(10)
         else:
-            raise Exception("All retries failed") from exc
+            raise Exception("All retries failed") from last_exc
 
 
 if __name__ == "__main__":
