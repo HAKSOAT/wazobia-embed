@@ -1,6 +1,5 @@
 import argparse
 import logging
-
 import jsonlines
 
 from pipeline.data.utils import load_artefact
@@ -8,12 +7,14 @@ from pipeline.data.enums import Language, DataSplit, DataOperation
 from pipeline.constants import ARTEFACTS_DIR
 from pipeline.data.train_data import make_hausa_df, make_igbo_df, make_yoruba_df, make_train_dataset
 from pipeline.data.eval_test_data import make_eval_test_dataset
-from pipeline.data.postprocess import get_audits, postprocess_dataset, sample_data
+from pipeline.data.postprocess import get_audits, postprocess_dataset, sample_data_by_text_length, sample_data_by_language
 from pipeline.data.translate import make_english_dataset
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+EVAL_TEST_ROW_COUNT = 2000
 
 def main(args):
     language = args.language.lower()
@@ -28,6 +29,7 @@ def main(args):
             Language.hausa: make_hausa_df,
         }
 
+        # Not doing the try and catch here because the data used here are primitive datasets that should always exist.
         if args.split == DataSplit.train:
             make_train_dataset(processors.get(language)(), filename=f"{ARTEFACTS_DIR}/{language}_train_dataset.jsonl")
             logger.info(f"Train dataset created for {language} and saved to {ARTEFACTS_DIR}/{language}_train_dataset.jsonl")
@@ -43,15 +45,26 @@ def main(args):
         if language == Language.english:
             raise ValueError("English dataset is not supported for the postprocess operation. Use 'translate' operation instead.")
         
-        rows = load_artefact(f"{args.language}_{args.split}_dataset.jsonl")
-        model_name = "gemma3_27b"
-        audits = get_audits(f"{args.language}_{model_name}_{args.split}_results.jsonl", n=None)
+        try:
+            rows = load_artefact(f"{args.language}_{args.split}_dataset.jsonl")
+        except ValueError as e:
+            msg = f"Could not load dataset for {args.language} and split {args.split}. "
+            msg += "Ensure the dataset exists before postprocessing, perhaps you need to run the create operation first."
+            raise RuntimeError(msg) from e
+        
+        try:
+            model_name = "gemma3_27b"
+            audits = get_audits(f"{args.language}_{model_name}_{args.split}_results.jsonl", n=None)
+        except ValueError as e:
+            msg = f"Could not load audit results for {args.language}, model {model_name} and split {args.split}. "
+            msg += "Ensure the audit results exist before postprocessing, perhaps you need to run the pipeline.llms.ollama_audit pipeline first."
+            raise RuntimeError(msg) from e
+        
         filtered_lines = postprocess_dataset(rows, audits, args.language)
-
         filepath = f"{ARTEFACTS_DIR}/filtered_{args.language}_{args.split}_dataset.jsonl"
         with jsonlines.open(filepath, "w") as f_:
             if DataSplit.test in filepath or DataSplit.eval in filepath:
-                f_.write_all(sample_data(filtered_lines, n=2000))
+                f_.write_all(sample_data_by_text_length(filtered_lines, n=EVAL_TEST_ROW_COUNT))
             else:
                 f_.write_all(filtered_lines)
         logger.info(f"Filtered dataset created for {args.language} and saved to {filepath}.")
@@ -59,11 +72,18 @@ def main(args):
         if language != Language.english:
             raise ValueError("Translate operation is only supported for English dataset.")
         
-        rows = make_english_dataset(args.split)
+        try:
+            rows = make_english_dataset(args.split)
+        except ValueError as e:
+            msg = f"Could not create English dataset for split {args.split}. "
+            msg += "Ensure the translated datasets exist before creating the English dataset, perhaps you need to run the pipeline.llms.ollama_translation pipeline first."
+            raise RuntimeError(msg) from e
+        
         filepath = f"{ARTEFACTS_DIR}/filtered_{args.language}_{args.split}_dataset.jsonl"
         with jsonlines.open(filepath, "w") as f_:
             if DataSplit.test in filepath or DataSplit.eval in filepath:
-                f_.write_all(sample_data(rows, n=2000))
+                # Using language aware sampling because the English dataset is a combination of all languages.
+                f_.write_all(sample_data_by_language(rows, n=EVAL_TEST_ROW_COUNT))
             else:
                 f_.write_all(rows)
         logger.info(f"Filtered dataset translated for {args.language} and saved to {filepath}.")

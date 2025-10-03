@@ -8,6 +8,10 @@ class StrEnumMeta(EnumMeta):
 
 class DataSource(StrEnum, metaclass=StrEnumMeta):
     wura = "wura"
+    # The Mato datasource is made up of the following sources:
+    # Yoruba -> Aláròyé, VON Yoruba and BBC Yoruba.
+    # Igbo -> VON Igbo, and BBC Igbo. 
+    # Hausa -> Premium Times Hausa, Fim Magazine, VOA Hausa, Katsina Post, Legit Hausa, Amaniya, and VON Hausa.
     mato = "mato"
     masakhanews = "masakhanews"
     

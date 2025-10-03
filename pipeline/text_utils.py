@@ -1,12 +1,32 @@
 import tiktoken
 
-def count_tokens(text):
+
+def count_tokens(text: str) -> int:
+    """
+    Count the number of tokens in the text using the GPT-2 tokenizer.
+
+    Args:
+        text: The text to count the tokens of.
+
+    Returns:
+        The number of tokens in the text.
+    """
     encoding = tiktoken.get_encoding("gpt2")
     token_ids = encoding.encode(text)
     return len(token_ids)
 
 
-def truncate_text(text, max_tokens):
+def truncate_text(text: str, max_tokens: int) -> str:
+    """
+    Truncate the text to the desired number of tokens using the GPT-2 tokenizer.
+
+    Args:
+        text: The text to truncate.
+        max_tokens: The maximum number of tokens to truncate to.
+
+    Returns:
+        The truncated text.
+    """
     encoding = tiktoken.get_encoding("gpt2")
     token_ids = encoding.encode(text)
     truncated_token_ids = token_ids[:max_tokens]

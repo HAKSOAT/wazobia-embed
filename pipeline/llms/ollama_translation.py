@@ -9,9 +9,11 @@ from pathlib import Path
 import jsonlines
 import ollama
 
-from ollama import chat, AsyncClient
+from ollama import AsyncClient
 
-from pipeline.text_utils import count_tokens, truncate_text, skip_doc_body
+from pipeline.constants import ARTEFACTS_DIR
+from pipeline.data.enums import DataSplit
+from pipeline.text_utils import count_tokens, truncate_text
 
 
 syntactic = """
@@ -60,31 +62,13 @@ async def main(args):
     if language.lower() not in ["yoruba", "igbo", "hausa"]:
         raise ValueError("Language must be Yoruba, Igbo or Hausa")
 
-    if args.split == "train":
-        dir_ = Path("/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/combine_wura_all_langs")
-        out_file = f"{language.lower()}_english_{args.model.replace(':', '_')}_train_results.jsonl"
-        in_file = f"filtered_{language.lower()}_train_dataset.jsonl"
-    elif args.split == "eval":
-        dir_ = Path(f"/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/static_wura/{language.lower()}")
-        out_file = f"{language.lower()}_english_{args.model.replace(':', '_')}_eval_results.jsonl"
-        in_file = f"filtered_{language.lower()}_eval_dataset.jsonl"
-    elif args.split == "test":
-        dir_ = Path(f"/content/drive/MyDrive/Side Projects/NaijEmbeddings/datasets/static_wura/{language.lower()}")
-        out_file = f"{language.lower()}_english_{args.model.replace(':', '_')}_test_results.jsonl"
-        in_file = f"filtered_{language.lower()}_test_dataset.jsonl"
-    else:
-        raise ValueError("Split must be train, eval or test")
+    in_file = Path(args.input_path)
+    out_file = Path(args.output_path)
 
-    if not (dir_/in_file).exists():
-        raise RuntimeError(f"Input file {dir_/in_file} does not exist")
+    if not in_file.exists():
+        raise RuntimeError(f"Input file {in_file} does not exist.")
 
-    shutil.copyfile(dir_ / in_file, in_file)
-
-    # Restoring the file from the output dir, so we continue processing from last stopped.
-    if not Path(out_file).exists() and args.restore and Path(dir_ / out_file).exists():
-        shutil.copyfile(dir_ / out_file, out_file)
-
-    if Path(out_file).exists():
+    if out_file.exists():
         with jsonlines.open(out_file) as f:
             # allow_none is handling a bug in previous processing where
             # some lines were None
@@ -139,7 +123,6 @@ async def main(args):
 
                 with jsonlines.open(out_file, 'a') as f:
                     f.write_all(results)
-                shutil.copyfile(out_file, dir_ / out_file)
 
                 num_results += len(results)
                 print(f"Done {num_results}")
@@ -151,8 +134,14 @@ if __name__ == "__main__":
     parser.add_argument("--language", type=str, default="Yoruba")
     parser.add_argument("--batch_size", type=int, default=20)
     parser.add_argument("--split", choices=["train", "eval", "test"], default="train")
-    parser.add_argument("--restore", type=bool, default=True)
     args = parser.parse_args()
+
+    language = args.language.lower()
+    if args.split in DataSplit:
+        args.input_path = f"{ARTEFACTS_DIR}/filtered_{language.lower()}_{args.split}_dataset.jsonl"
+        args.output_path = f"{ARTEFACTS_DIR}/{language.lower()}_english_{args.model.replace(':', '_')}_{args.split}_results.jsonl"
+    else:
+        raise ValueError(f"Split must be one of {DataSplit}. Got {args.split}")
 
     ollama.pull(args.model)
     asyncio.run(main(args))

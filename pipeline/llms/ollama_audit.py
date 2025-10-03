@@ -8,7 +8,7 @@ from pathlib import Path
 import jsonlines
 import ollama
 
-from ollama import chat, AsyncClient
+from ollama import AsyncClient
 
 from pipeline.constants import ARTEFACTS_DIR
 from pipeline.data.utils import load_artefact
@@ -88,6 +88,7 @@ async def main(args):
 
         # Setting up retries because the run_ollama.sh is set to restart Ollama after some intervals.
         # Hence, we need to retry the request if it fails on such occassions.
+        last_exc = None
         for _ in range(retries):
             try:
                 results = [None] * min(args.batch_size, len(batch))
@@ -117,12 +118,14 @@ async def main(args):
 
                 print(f"Done {count}")
                 batch = []
+                break
             except Exception as exc:
                 print(line)
                 print(f"Error: {traceback.format_exc()}")
+                last_exc = exc
                 time.sleep(10)
         else:
-            raise Exception("All retries failed") from exc
+            raise Exception("All retries failed") from last_exc
 
 
 if __name__ == "__main__":
@@ -131,20 +134,14 @@ if __name__ == "__main__":
     parser.add_argument("--language", choices=Language, default="yoruba", type=str.lower)
     parser.add_argument("--batch_size", type=int, default=20)
     parser.add_argument("--split", choices=DataSplit, default="train", type=str.lower)
-    parser.add_argument("--input_path", type=str)
-    parser.add_argument("--output_path", type=str)
     args = parser.parse_args()
 
     language = args.language.lower()
-    if not args.input_path:
-        if args.split in DataSplit:
-            args.input_path = f"{language.lower()}_{args.split}_dataset.jsonl"
-        else:
-            raise ValueError(f"Split must be one of {DataSplit}. Got {args.split}")
-        
-    if not args.output_path:
-        if args.split in DataSplit:
-            args.output_path = f"{ARTEFACTS_DIR}/{language.lower()}_{args.model.replace(':', '_')}_{args.split}_results.jsonl"
+    if args.split in DataSplit:
+        args.input_path = f"{ARTEFACTS_DIR}/{language.lower()}_{args.split}_dataset.jsonl"
+        args.output_path = f"{ARTEFACTS_DIR}/{language.lower()}_{args.model.replace(':', '_')}_{args.split}_results.jsonl"
+    else:
+        raise ValueError(f"Split must be one of {DataSplit}. Got {args.split}")
 
     ollama.pull(args.model)
     asyncio.run(main(args))
