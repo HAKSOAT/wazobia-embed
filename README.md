@@ -72,18 +72,31 @@ print(similarity_scores)
 
 ## The Dataset
 
+The datasets used in this work are currently on Google Drive. You can find the drive IDs for the various files in `pipeline/data/constants.py`.
+
+The final datasets used in training, evaluating and testing the models are of the format: `filtered_<language>_<split>_dataset.jsonl`.
+
+You can then download them using gdown (should be installed if you followed the initial setup) via the command:
+
+```
+gdown <drive_id>
+```
+
+For example, the `filtered_english_test_dataset.jsonl` dataset can be downloaded using:
+
+```
+gdown 1UDAxYEGOXRLMjEp9me3iAiuKKvUXwlwv
+```
+
 ## Pipelines
 
-### Setting up the Environment
-
-This is a Python project based on the `uv` package manager, so you need to [run its installation script](https://docs.astral.sh/uv/getting-started/installation/) if you do not already have it installed.
-
-The repo can be set up by running:
+Running the pipelines requires the `pipeline` extra on `uv`, you can set this up by running:
 
 ```
-git clone https://github.com/HAKSOAT/wazobia-embed.git
-uv sync
+uv sync --extra pipeline
 ```
+
+While the datasets already exist and can be downloaded based on [the dataset section](#the-dataset), it is possible that the data in drive might be deleted for storage cost reasons. This would leave only the primitive datasets from which the rest were derived. These pipelines show how to recompute the dataset.
 
 ### Running the Data Pipelines
 
