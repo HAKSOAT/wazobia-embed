@@ -145,7 +145,7 @@ Large Language Models were used in this project to help with dataset creation.
 The language models used in these pipelines were run using [Ollama](https://ollama.com/), hence there is a need to install the software first, then run it via:
 
 ```
-chmod +x && pipeline/llms/run_ollama.sh
+chmod +x pipeline/llms/run_ollama.sh && pipeline/llms/run_ollama.sh
 ```
 
 *NB: For all the commands in this section, replace the anchor bracket variables with appropriate values.*
