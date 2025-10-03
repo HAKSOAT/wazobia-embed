@@ -149,7 +149,7 @@ def postprocess_dataset(rows: list[dict], audits: list[dict], language: str | La
     return results
 
 
-def sample_data(rows: list[dict], n: int = 2000) -> list[dict]:
+def sample_data_by_text_length(rows: list[dict], n: int = 2000) -> list[dict]:
     """
     Sample the data from the rows.
 
@@ -200,3 +200,40 @@ def sample_data(rows: list[dict], n: int = 2000) -> list[dict]:
         attempt += 1
     samples = [rows[i] for i in sample_idxs]
     return samples[:n]
+
+
+def sample_data_by_language(rows: list[dict], n: int = 2000) -> list[dict]:
+    """
+    Sample the data from the rows.
+
+    Attempts to balance the samples across the languages. It then tries to balance the samples across text length buckets within each language.
+
+    Args:
+        rows: The rows to sample from.
+        n: The number of rows to sample.
+
+    """
+    lang_to_idx = {
+        Language.yoruba: 0,
+        Language.igbo: 1,
+        Language.hausa: 2
+    }
+    language_rows = [[], [], []]
+    language_row_counts = [0, 0, 0]
+
+    for row in rows:
+        language_rows[lang_to_idx[row["root_query_language"]]].append(row)
+        language_row_counts[lang_to_idx[row["root_query_language"]]] += 1
+
+    sorted_indices = sorted(range(len(language_rows)), key=lambda x: language_row_counts[x])
+    # Attempt to get a balanced sample per language
+    sampled_rows = []
+    for idx, lang_idx in enumerate(sorted_indices):
+        remaining_rows = n - len(sampled_rows)
+        desired_minimum_rows = math.ceil(remaining_rows / (len(sorted_indices) - idx))
+        if language_row_counts[lang_idx] <= desired_minimum_rows:
+            sampled_rows.extend(language_rows[lang_idx])
+        else:
+            sampled_rows.extend(sample_data_by_text_length(language_rows[lang_idx], n=desired_minimum_rows))
+
+    return sampled_rows[:n]

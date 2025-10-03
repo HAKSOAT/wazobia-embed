@@ -4,8 +4,15 @@
 if ! command -v ollama >/dev/null 2>&1; then
     echo "Ollama not found."
     if [[ "$(uname)" == "Linux" ]]; then
-        echo "Installing Ollama ..."
+        echo "Installing Ollama on Linux..."
         OLLAMA_VERSION=0.6.5 curl -fsSL https://ollama.com/install.sh | sh
+    elif [[ "$(uname)" == "Darwin" ]]; then
+        echo "Installing Ollama on macOS using Homebrew..."
+        if ! command -v brew >/dev/null 2>&1; then
+            echo "Homebrew not found. Please install Homebrew first: https://brew.sh" >&2
+            exit 1
+        fi
+        brew install ollama
     else
         echo "Error: Visit https://ollama.com/download to install Ollama." >&2
         exit 1
