@@ -9,9 +9,9 @@ from pathlib import Path
 import jsonlines
 import ollama
 
-from ollama import chat, AsyncClient
+from ollama import AsyncClient
 
-from pipeline.text_utils import count_tokens, truncate_text, skip_doc_body
+from pipeline.text_utils import count_tokens, truncate_text
 
 
 syntactic = """
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     parser.add_argument("--language", type=str, default="Yoruba")
     parser.add_argument("--batch_size", type=int, default=20)
     parser.add_argument("--split", choices=["train", "eval", "test"], default="train")
-    parser.add_argument("--restore", type=bool, default=True)
+    parser.add_argument("--restore", type=bool, default=True, help="Whether to restore from existing output file if it exists (useful for resuming interrupted runs).")
     args = parser.parse_args()
 
     ollama.pull(args.model)

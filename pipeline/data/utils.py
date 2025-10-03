@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
@@ -51,7 +53,7 @@ def load_jsonl(file_path):
 def load_artefact(key):
     """Loads data."""
     path = Path(key) if Path(key).is_absolute() else Path(ARTEFACTS_DIR) / key
-    if not path.exists() and not key in DRIVE_IDS:
+    if not path.exists() and key not in DRIVE_IDS:
         raise ValueError(f"Key {key} not found on disk. It also does not exist in DRIVE_IDS. Either provide a valid path or drive id."
                          f" Supported drive ids: {list(DRIVE_IDS.keys())}.")
     if not path.exists() and key in DRIVE_IDS:
