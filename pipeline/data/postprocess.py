@@ -12,7 +12,18 @@ from pipeline.text_utils import skip_doc_body
 from pipeline.data.utils import extract_domain_name, fix_negatives, load_artefact
 
 
-def fix_wiki_pos(row):
+def fix_wiki_pos(row: dict) -> dict:
+    """
+    Fix the common issues with the positive documents from Wiki datasets.
+
+    Most common issues are:
+
+    Args:
+        row: The row to fix.
+
+    Returns:
+        The fixed row.
+    """
     query = row["query"].strip()
 
     if not row.get("root_text"):
@@ -20,8 +31,12 @@ def fix_wiki_pos(row):
 
     pos_is_list = isinstance(row["pos"], list)
     pos = row["pos"][0] if pos_is_list else row["pos"]
+
+    # Remove the query when it appears at the beginning of the document like a header.
+    # For example in this url: https://web.archive.org/web/20250426014544/https://yo.wikipedia.org/wiki/Bookshop_House
     substring = f"{query}\n\n"
     pos = pos[len(substring):] if pos.startswith(substring) else pos
+    # Remove the query when it somewhere in the actual text, the provided url above also shows this.
     query_split = [re.escape(q) for q in query.split()]
     re_pattern = reduce(lambda a, b:
                         a +
@@ -41,7 +56,18 @@ def fix_wiki_pos(row):
     return row
 
 
-def get_audits(filename, n=100, categories=["X", "NLC"]):
+def get_audits(filename: str, n: int = 100, categories: list[str] = ["X", "NLC"]) -> list[dict]:
+    """
+    Get the audits from provided audit file.
+
+    Args:
+        filename: The filename to get the audits from.
+        n: The number of audits to get.
+        categories: The categories to get the audits from.
+
+    Returns:
+        The audits.
+    """
     lines = []
     for line in load_artefact(filename):
         if not line:
@@ -62,7 +88,18 @@ def get_audits(filename, n=100, categories=["X", "NLC"]):
             break
     return lines
 
-def postprocess_dataset(rows, audits, language):
+def postprocess_dataset(rows: list[dict], audits: list[dict], language: str | Language) -> list[dict]:
+    """
+    Postprocess the dataset. This returns the final dataset that is used for training and evaluation.
+
+    Args:
+        rows: The rows to postprocess.
+        audits: The audits to use.
+        language: The language of the dataset.
+
+    Returns:
+        The final dataset.
+    """
     language = language.lower()
     if language not in Language:
         raise ValueError(f"Language must be one of {Language}")
@@ -90,7 +127,8 @@ def postprocess_dataset(rows, audits, language):
         if audits[i]["category"] not in ["NLC", "SKIP", "EMPTYTEXT"]:
             results.append(row)
 
-    # Hausa does not have all the audits done.
+    # Hausa does not have all the audits done, so we add the remaining rows to the results.
+    # Only adding the rows from the Mato datasource as we trust that source more than the other sources, so auditing can be skipped.
     if language == Language.hausa:
         for row in rows[len(audits):]:
             if row["source"] != DataSource.mato:
@@ -111,7 +149,19 @@ def postprocess_dataset(rows, audits, language):
     return results
 
 
-def sample_data(rows, n=2000):
+def sample_data(rows: list[dict], n: int = 2000) -> list[dict]:
+    """
+    Sample the data from the rows.
+
+    Attempts to balance the samples across the text length buckets: 512, 1024, 2048, greater than 2048.
+
+    Args:
+        rows: The rows to sample from.
+        n: The number of rows to sample.
+
+    Returns:
+        The sampled rows.
+    """
     if n > len(rows):
         warning_msg = f"All rows were returned at `sample_data` function call. Total number of rows are {len(rows)}, requested to sample {n}"
         warnings.warn(warning_msg)
@@ -140,7 +190,7 @@ def sample_data(rows, n=2000):
         desired_min = math.ceil((n - len(sample_idxs)) / len(idx_bins))
         idx = attempt % len(idx_bins)
         if len(idx_bins[idx]) > desired_min:
-            # Converting to a tuple and then to a set is inefficient.
+            # NB: Converting to a tuple and then to a set is inefficient, but works for now.
             choices = set(rng.choice(tuple(idx_bins[idx]), desired_min, replace=False))
             sample_idxs.update(choices)
             idx_bins[idx] = idx_bins[idx] - choices

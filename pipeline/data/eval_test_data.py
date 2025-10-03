@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 
@@ -7,7 +9,26 @@ from pipeline.data.enums import Language
 from pipeline.data.constants import WURA_LANG_ID_MAP
 
 
-def make_eval_test_dataset(language, eval_filename="eval_dataset.jsonl", test_filename="test_dataset.jsonl"):
+if TYPE_CHECKING:
+    import pandas as pd
+
+
+def make_eval_test_dataset(language: str | Language, eval_filename: str = "eval_dataset.jsonl", test_filename: str = "test_dataset.jsonl") -> dict[str, pd.DataFrame]:
+    """
+    Extract the validation split from the WURA dataset, then split it into eval and test sets.
+
+    Args:
+        language: The language to extract the validation split from.
+        eval_filename: The filename to save the eval set to.
+        test_filename: The filename to save the test set to.
+
+    Returns:
+        A dictionary with the eval and test sets.
+
+    Example:
+        >>> make_eval_test_dataset("hausa")
+        {'eval': <pandas.DataFrame>, 'test': <pandas.DataFrame>}
+    """
     if language.lower() not in Language:
         raise ValueError(f"Language must be one of {language}.")
     wura_lang = WURA_LANG_ID_MAP.get(language.lower())

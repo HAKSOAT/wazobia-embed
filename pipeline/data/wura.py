@@ -1,11 +1,20 @@
 import pandas as pd
-from datasets import arrow_dataset
+from datasets import arrow_dataset, dataset_dict
 
 from pipeline.data.utils import extract_domain_name
 from pipeline.data.enums import DataSource
 
 
-def prepare_wura(dataset):
+def prepare_wura(dataset: arrow_dataset.Dataset) -> pd.DataFrame:
+    """
+    Prepare the wura dataset, filtering out rows that are not valid.
+
+    Args:
+        dataset: The wura dataset.
+
+    Returns:
+        The prepared wura dataset.
+    """
     if not isinstance(dataset, arrow_dataset.Dataset):
         raise ValueError(f"The parameter `dataset` only accepts `arrow_dataset.Dataset` objects. Got {type(dataset)} instead.")
 
@@ -45,9 +54,18 @@ def prepare_wura(dataset):
     return wura_df
 
 
-def wura_remove_validation_rows(df, wura_ds):
-    """Checks for rows in df that exist in wura_ds, using the url, then drops them"""
-    wura_val_urls = wura_ds["url"]
+def wura_remove_validation_rows(df: pd.DataFrame, wura_validation_dataset) -> pd.DataFrame:
+    """
+    Checks for rows in df that exist in wura_ds, using the url, then drops them.
+    
+    Args:
+        df: The dataframe to modify
+        wura_validation_dataset: The wura validation dataset.
+
+    Returns:
+        The modified dataframe.
+    """
+    wura_val_urls = wura_validation_dataset["url"]
     wura_val_urls = {url.strip("/") + "/" for url in wura_val_urls}
 
     def format_url(row):
@@ -64,7 +82,16 @@ def wura_remove_validation_rows(df, wura_ds):
     return df
 
 
-def align_with_wura(df, wura_data):
+def align_with_wura(df: pd.DataFrame, wura_data: dataset_dict.DatasetDict) -> pd.DataFrame:
+    """
+    Align the dataframe with the wura dataset, removing duplicates and adding missing categories.
+    Args:
+        df: The dataframe to align.
+        wura_data: The wura dataset.
+        
+    Returns: 
+        The aligned dataframe.
+    """
     df = wura_remove_validation_rows(df, wura_data["validation"])
     # Combined collected dataset with Wura train dataset
     wura_df = prepare_wura(wura_data["train"])

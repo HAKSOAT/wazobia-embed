@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from datasets import load_dataset
+from datasets import load_dataset, dataset_dict
 
 from pipeline.constants import SEED
 from pipeline.data.enums import DataSource
@@ -8,7 +8,17 @@ from pipeline.data.wura import align_with_wura
 from pipeline.data.utils import load_artefact
 
 
-def unify_datasources(dfs: list, wura_data):
+def unify_datasources(dfs: list[pd.DataFrame], wura_data: dataset_dict.DatasetDict) -> pd.DataFrame:
+    """
+    Unify the datasources.
+
+    Args:
+        dfs: The list of dataframes to unify.
+        wura_data: The wura data.
+
+    Returns:
+        The unified dataframe.
+    """
     for df in dfs:
         df.columns = df.columns.str.lower()
         if "sub_topic" not in df.columns:
@@ -23,7 +33,7 @@ def unify_datasources(dfs: list, wura_data):
     return df
 
 
-def make_train_dataset(df, duplicate_rows=False, filename="train_dataset.jsonl"):
+def make_train_dataset(df: pd.DataFrame, duplicate_rows=False, filename="train_dataset.jsonl") -> None:
     """In this version of make dataset, no longer split into train and eval, because eval and test datasets are currently gotten from wura."""
     df_count = len(df)
     df["neg"] = None
@@ -66,6 +76,7 @@ def make_train_dataset(df, duplicate_rows=False, filename="train_dataset.jsonl")
 
 
 def make_hausa_df():
+    """Combines the collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
     wura_data = load_dataset("castorini/wura", "hau", level="document", verification_mode="no_checks", trust_remote_code=True)
     df1 = load_artefact("hausa_mato_81k.tsv")
     # Key to note that drop duplicates is being done.
@@ -80,7 +91,7 @@ def make_hausa_df():
 
 
 def make_yoruba_df():
-    """Combines collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
+    """Combines the collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
     wura_data = load_dataset("castorini/wura", "yor", level="document", verification_mode="no_checks", trust_remote_code=True)
 
     df1 = load_artefact("alaroye_mato_10k.tsv")
@@ -102,7 +113,7 @@ def make_yoruba_df():
 
 
 def make_igbo_df():
-    """Combines collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
+    """Combines the collected dataset with the wura dataset, ensuring the urls from collected dataset do not appear in wura validation."""
     wura_data = load_dataset("castorini/wura", "ibo", level="document", verification_mode="no_checks", trust_remote_code=True)
     df1 = load_artefact("igbo_mato_3k.tsv")
     df1["source"] = DataSource.mato
