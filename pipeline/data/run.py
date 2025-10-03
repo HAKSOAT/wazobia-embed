@@ -1,5 +1,6 @@
 import argparse
 import logging
+import jsonlines
 
 from pipeline.data.utils import load_artefact
 from pipeline.data.enums import Language, DataSplit, DataOperation

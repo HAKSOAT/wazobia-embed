@@ -1,8 +1,8 @@
-# Improving BGE-M3 Multilingual Dense Embeddings for Nigerian Low Resource Languages
+# 🌍 Improving BGE-M3 Multilingual Dense Embeddings for Nigerian Low Resource Languages
 
 This project extends the [BGE-M3](https://github.com/FlagOpen/FlagEmbedding/blob/master/docs/source/bge/bge_m3.rst) on more data for Nigerian native languages: Yoruba, Igbo and Hausa.
 
-## Setting up the Environment
+## ⚙️ Setting up the Environment
 
 This is a Python project based on the `uv` package manager, so you need to [run its installation script](https://docs.astral.sh/uv/getting-started/installation/) if you do not already have it installed.
 
@@ -10,10 +10,11 @@ The repo can be set up by running:
 
 ```
 git clone https://github.com/HAKSOAT/wazobia-embed.git
+cd wazobia-embed
 uv sync
 ```
 
-## Running the Model
+## 🚀 Running the Model
 
 The model weights are currently on Huggingface at [abdulmatinomotoso/bge-finetuned](https://huggingface.co/abdulmatinomotoso/bge-finetuned).
 
@@ -70,7 +71,7 @@ print(similarity_scores)
 # ]], dtype=float32)
 ```
 
-## The Dataset
+## 📂 The Dataset
 
 The datasets used in this work are currently on Google Drive. You can find the drive IDs for the various files in `pipeline/data/constants.py`.
 
@@ -88,11 +89,17 @@ For example, the `filtered_english_test_dataset.jsonl` dataset can be downloaded
 gdown 1UDAxYEGOXRLMjEp9me3iAiuKKvUXwlwv
 ```
 
-## Finetuning a Model
+## 🎯 Finetuning a Model
 
-The [finetune.ipynb](https://github.com/FlagOpen/FlagEmbedding/blob/master/Tutorials/7_Fine-tuning/7.1.2_Fine-tune.ipynb) contains all of the needed information needed to train a model.
+The [embedder finetuning example](https://github.com/FlagOpen/FlagEmbedding/tree/master/examples/finetune/embedder) contains all of the needed information needed to finetune a model.
 
-However on this project, the command used to train the model looked something like:
+One of the requirements is the deepspeed configuration which can be downloaded via:
+
+```
+wget https://raw.githubusercontent.com/FlagOpen/FlagEmbedding/refs/heads/master/examples/finetune/ds_stage0.json
+```
+
+On this project, the command used to finetune the model looked something like:
 
 ```
 torchrun --standalone --nproc_per_node 8 \
@@ -129,7 +136,9 @@ torchrun --standalone --nproc_per_node 8 \
 --fix_encoder False
 ```
 
-## Pipelines
+Ensure to set the parameters as required. For example, `--nproc_per_node` to 1 if you have a single GPU.
+
+## 🔄 Pipelines
 
 Running the pipelines requires the `pipeline` extra on `uv`, you can set this up by running:
 
@@ -139,7 +148,7 @@ uv sync --extra pipeline
 
 While the datasets already exist and can be downloaded based on [the dataset section](#the-dataset), it is possible that the data in drive might be deleted for storage cost reasons. This would leave only the primitive datasets from which the rest were derived. These pipelines show how to recompute the dataset.
 
-### Running the Data Pipelines
+### 🛠️ Running the Data Pipelines
 
 This section contains data pipelines used to create the datasets used when running the experiments. The dataset section contains the actual data, but this section is necessary for reproducibility as the datasets might be deleted in the future.
 
@@ -179,7 +188,7 @@ It can be run with the command:
 python -m pipeline.data.run --language <language> --split <split> --operation translate
 ```
 
-### Running the LLM Pipelines
+### 🤖 Running the LLM Pipelines
 
 Large Language Models were used in this project to help with dataset creation.
 
@@ -219,7 +228,7 @@ You can also find the other parameters for the pipeline using `python -m pipelin
 
 > When running the LLM pipelines for the first time, Ollama might take sometime to pull the specified model.
 
-## Citation
+## 📑 Citation
 
 If you find this repository useful, please consider giving a star :star: and citation
 
@@ -232,5 +241,11 @@ If you find this repository useful, please consider giving a star :star: and cit
 }
 ```
 
-## License
+## ML Collective Nigeria
+
+![ML Collective](https://mlcollective.org/static/mlc_logo_words.png)
+
+This project was worked on by the Information Retrieval focus group of [ML Collective Nigeria](https://mlcollective.org/wiki/mlc-nigeria/).
+
+## 📜 License
 wazobia-embed is licensed under the [MIT License](https://github.com/HAKSOAT/wazobia-embed/blob/main/LICENSE).
