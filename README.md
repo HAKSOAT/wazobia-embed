@@ -23,12 +23,12 @@ You can then use it to generate embeddings via:
 import torch
 from FlagEmbedding import BGEM3FlagModel
 
+device = "cpu"
 if torch.cuda.is_available():
     device = "cuda"
 elif torch.backends.mps.is_available():
     device = "mps"
-else:
-    device = "cpu"
+
 half_precision = False # or True if you really want
 # Load the abdulmatinomotoso/bge-finetuned model
 model = BGEM3FlagModel('abdulmatinomotoso/bge-finetuned', use_fp16=half_precision, devices=[device])
@@ -86,6 +86,47 @@ For example, the `filtered_english_test_dataset.jsonl` dataset can be downloaded
 
 ```
 gdown 1UDAxYEGOXRLMjEp9me3iAiuKKvUXwlwv
+```
+
+## Finetuning a Model
+
+The [finetune.ipynb](https://github.com/FlagOpen/FlagEmbedding/blob/master/Tutorials/7_Fine-tuning/7.1.2_Fine-tune.ipynb) contains all of the needed information needed to train a model.
+
+However on this project, the command used to train the model looked something like:
+
+```
+torchrun --standalone --nproc_per_node 8 \
+-m FlagEmbedding.finetune.embedder.encoder_only.m3 \
+--model_name_or_path BAAI/bge-m3 \
+--output_dir ./bge-m3 \
+--cache_dir ./cache/model \
+--cache_path ./cache/data \
+--train_data artefacts/filtered_yoruba_train_dataset.jsonl artefacts/filtered_igbo_train_dataset.jsonl artefacts/filtered_hausa_train_dataset.jsonl artefacts/filtered_english_train_dataset.jsonl \
+--trust_remote_code True \
+--train_group_size 2 \
+--query_max_len 512 \
+--passage_max_len 2048 \
+--overwrite_output_dir \
+--learning_rate 1e-5 \
+--fp16 \
+--dataloader_num_workers 12 \
+--gradient_checkpointing \
+--deepspeed ds_stage0.json \
+--num_train_epochs 3 \
+--per_device_train_batch_size 16 \
+--dataloader_drop_last False \
+--warmup_ratio 0.1 \
+--report_to none \
+--logging_steps 100 \
+--save_steps 500 \
+--temperature 0.01 \
+--sentence_pooling_method cls \
+--normalize_embeddings True \
+--knowledge_distillation False \
+--kd_loss_type m3_kd_loss \
+--unified_finetuning False \
+--use_self_distill False \
+--fix_encoder False
 ```
 
 ## Pipelines
@@ -175,6 +216,8 @@ python -m pipeline.llms.ollama_translation --model <model> --language <language>
 ```
 
 You can also find the other parameters for the pipeline using `python -m pipeline.llms.ollama_translation --help`.
+
+> When running the LLM pipelines for the first time, Ollama might take sometime to pull the specified model.
 
 ## Citation
 
